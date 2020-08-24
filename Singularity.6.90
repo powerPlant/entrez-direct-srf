@@ -1,0 +1,66 @@
+BootStrap: docker
+From: perl:5.30
+
+%labels
+  Author kiwiroy@users-noreply.github.com
+  Maintainer roy.storey@plantandfood.co.nz
+  Version 0.1.0
+
+%environment
+  export LC_ALL=C
+
+%setup
+  echo export BUILDER_REPOSITORY_VERSION="$(git rev-parse --verify --short HEAD)"       > .builderinfo
+  echo export BUILDER_REPOSITORY_NAME="$(basename "$(git rev-parse --show-toplevel)")" >> .builderinfo
+  echo export BUILDER_REPOSITORY_URL="$(git remote get-url origin)"                    >> .builderinfo
+
+%files
+  .builderinfo .builderinfo
+  cpanfile cpanfile
+  edirect-commands allowed
+
+%post
+  ### install / update system dependencies
+  apt-get -y update && apt-get -y install git locales
+  APP_REPOSITORY_VERSION=6.90.20170707
+  APP_REPOSITORY_NAME=edirect
+  APP_REPOSITORY_URL=https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/versions/$APP_REPOSITORY_VERSION/$APP_REPOSITORY_NAME-$APP_REPOSITORY_VERSION.tar.gz
+  
+  ### install dependencies and application
+  cpanm --installdeps -n -q .
+
+  ### install
+  mkdir -p /opt
+  curl -Lo edirect.tar.gz $APP_REPOSITORY_URL
+  tar -C /opt -zxf edirect.tar.gz
+  curl -Lo /opt/edirect/rchive.Linux.gz https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/versions/$APP_REPOSITORY_VERSION/rchive.Linux.gz
+  gunzip /opt/edirect/rchive.Linux.gz
+  chmod +x /opt/edirect/rchive.Linux
+  curl -Lo /opt/edirect/xtract.Linux.gz https://ftp.ncbi.nlm.nih.gov/entrez/entrezdirect/versions/$APP_REPOSITORY_VERSION/xtract.Linux.gz
+  gunzip /opt/edirect/xtract.Linux.gz
+  chmod +x /opt/edirect/xtract.Linux
+  
+  ### cleanup and store environment
+  rm -rf cpanfile ~/.cpanm
+  echo "export APP_REPOSITORY_VERSION=\"${APP_REPOSITORY_VERSION}\"" >> $SINGULARITY_ENVIRONMENT
+  echo "export APP_REPOSITORY_NAME=\"${APP_REPOSITORY_NAME}\""       >> $SINGULARITY_ENVIRONMENT
+  echo "export APP_REPOSITORY_URL=\"${APP_REPOSITORY_URL}\""         >> $SINGULARITY_ENVIRONMENT
+  cat .builderinfo                                                   >> $SINGULARITY_ENVIRONMENT
+  echo "PATH=\"/opt/edirect:/usr/local/bin:$PATH\""                      >> $SINGULARITY_ENVIRONMENT
+
+%runscript
+  ### apprun with a dashes are not supported
+  ### neither are symlinks to manage/change singularity name
+  ### roll our own.
+  ## echo "Container created by $BUILDER_REPOSITORY_NAME@$BUILDER_REPOSITORY_VERSION ($BUILDER_REPOSITORY_URL)" >&2
+  ## echo "Application from: $APP_REPOSITORY_NAME@$APP_REPOSITORY_VERSION ($APP_REPOSITORY_URL)"                >&2
+  SINGULARITY_BASENAME="$(basename "$SINGULARITY_NAME" .sif)"
+  if echo "$SINGULARITY_BASENAME" | grep -qxf /allowed; then
+    if [ -x /opt/edirect/$SINGULARITY_NAME ]; then
+      exec "$SINGULARITY_BASENAME" "$@"
+    else
+      echo "$SINGULARITY_BASENAME is not known" >&2
+    fi
+  else
+    echo "$SINGULARITY_BASENAME is not an $APP_REPOSITORY_NAME command" >&2
+  fi
