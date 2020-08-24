@@ -1,1 +1,1 @@
-Singularity.13.8.20200819
+Singularity.13.8
